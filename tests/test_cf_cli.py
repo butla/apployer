@@ -206,6 +206,18 @@ def test_create_space(mock_popen):
     cf_cli.create_space(space_name, org_name)
 
 
+def test_get_brokers(mock_popen):
+    cmd_output = """Getting service brokers as admin...
+
+name                 url
+application-broker   http://application-broker.example.com
+cdh                  http://cdh-broker.example.com
+"""
+    mock_popen.set_command('cf service-brokers', stdout=cmd_output)
+
+    assert cf_cli.service_brokers() == {'application-broker', 'cdh'}
+
+
 def test_get_buildpacks(mock_popen):
     cmd_output = """Getting buildpacks...
 

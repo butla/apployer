@@ -190,19 +190,21 @@ def mock_enable_broker_access(monkeypatch):
 
 def test_setup_broker_new(broker, mock_enable_broker_access,
                           mock_setup_service, mock_cf_cli):
-    mock_cf_cli.update_service_broker.side_effect = CommandFailedError
+    mock_cf_cli.service_brokers.return_value = {'no', 'broker', 'that', 'we', 'want'}
 
     deployer.setup_broker(broker)
 
     mock_cf_cli.create_service_broker.assert_called_with(broker.name, broker.auth_username,
                                                          broker.auth_password, broker.url)
     mock_enable_broker_access.assert_called_with(broker)
+    assert mock_cf_cli.service_brokers.call_args_list
     assert mock.call(broker, broker.service_instances[0]) in mock_setup_service.call_args_list
     assert mock.call(broker, broker.service_instances[1]) in mock_setup_service.call_args_list
 
 
 def test_setup_broker_update(mock_cf_cli, mock_setup_service, mock_enable_broker_access):
     broker = BrokerConfig('some-name', 'https://some-name.example.com', 'username', 'password')
+    mock_cf_cli.service_brokers.return_value = {broker.name}
 
     deployer.setup_broker(broker)
 
@@ -410,8 +412,8 @@ def test_deploy_appstack(monkeypatch, mock_upsi_deployer, mock_setup_broker):
                         mock_register_in_app_broker)
 
     # act
-    deployer.deploy_appstack(cf_login_data, appstack,
-                             artifacts_path, deployer.UPGRADE_STRATEGY)
+    deployer.deploy_appstack(cf_login_data, appstack, artifacts_path,
+                             deployer.UPGRADE_STRATEGY, False)
 
     # assert
     mock_prep_org_and_space.assert_called_with(cf_login_data)
@@ -429,6 +431,22 @@ def test_deploy_appstack(monkeypatch, mock_upsi_deployer, mock_setup_broker):
     mock_restart_apps.assert_called_with(appstack, app_guids)
     mock_register_in_app_broker.assert_called_with(apps[0], apps[1], domain,
                                                    deployer.DEPLOYER_OUTPUT, artifacts_path)
+
+
+def test_deploy_appstack_dry_run(monkeypatch):
+    fake_cf_login, fake_appstack, fake_artifacts_path, fake_strategy = 1, 2, 3, 4
+    mock_do_deploy = MagicMock()
+    monkeypatch.setattr('apployer.deployer._do_deploy', mock_do_deploy)
+    real_cf_cli = deployer.cf_cli
+    real_register_in_app_broker = deployer.register_in_application_broker
+
+    deployer.deploy_appstack(fake_cf_login, fake_appstack, fake_artifacts_path,
+                             fake_strategy, True)
+
+    mock_do_deploy.assert_called_with(fake_cf_login, fake_appstack,
+                                      fake_artifacts_path, fake_strategy)
+    assert deployer.cf_cli is real_cf_cli
+    assert deployer.register_in_application_broker is real_register_in_app_broker
 
 
 def test_register_in_app_broker(monkeypatch, mock_check_call):

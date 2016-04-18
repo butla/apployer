@@ -29,7 +29,7 @@ from zipfile import ZipFile
 import datadiff
 import yaml
 
-from apployer import cf_cli, cf_api, app_file, app_compare
+from apployer import cf_cli, cf_api, app_file, app_compare, dry_run
 from .cf_cli import CommandFailedError
 
 _log = logging.getLogger(__name__) #pylint: disable=invalid-name
@@ -43,8 +43,35 @@ FINAL_MANIFESTS_FOLDER = 'manifests'
 DEPLOYER_OUTPUT = 'apployer_out'
 
 
-def deploy_appstack(cf_login_data, filled_appstack, artifacts_path, push_strategy):
+def deploy_appstack(cf_login_data, filled_appstack, artifacts_path, push_strategy, is_dry_run):
     """Deploys the appstack to Cloud Foundry.
+
+    Args:
+        cf_login_data (`apployer.cf_cli.CfInfo`): Credentials and addresses needed to log into
+            Cloud Foundry.
+        filled_appstack (`apployer.appstack.AppStack`): Expanded appstack filled with configuration
+            extracted from a live TAP environment.
+        artifacts_path (str): Path to a directory containing application artifacts (zips).
+        push_strategy (str): Strategy for pushing applications.
+        is_dry_run (bool): Is this a dry run? If set to True, no changes (except for creating org
+            and space) will be introduced to targeted Cloud Foundry.
+    """
+    global cf_cli, register_in_application_broker #pylint: disable=C0103,W0603,W0601
+    if is_dry_run:
+        normal_cf_cli = cf_cli
+        cf_cli = dry_run.get_dry_run_cf_cli()
+        normal_register_in_app_broker = register_in_application_broker
+        register_in_application_broker = dry_run.get_dry_function(register_in_application_broker)
+    try:
+        _do_deploy(cf_login_data, filled_appstack, artifacts_path, push_strategy)
+    finally:
+        if is_dry_run:
+            cf_cli = normal_cf_cli
+            register_in_application_broker = normal_register_in_app_broker
+
+
+def _do_deploy(cf_login_data, filled_appstack, artifacts_path, push_strategy):
+    """Actual heavy lifting of deployment.
 
     Args:
         cf_login_data (`apployer.cf_cli.CfInfo`): Credentials and addresses needed to log into
@@ -89,7 +116,8 @@ def deploy_appstack(cf_login_data, filled_appstack, artifacts_path, push_strateg
     _log.info('DEPLOYMENT FINISHED')
 
 
-def register_in_application_broker(registered_app, application_broker, app_domain,
+def register_in_application_broker(registered_app, # pylint: disable=function-redefined
+                                   application_broker, app_domain,
                                    unpacked_apps_dir, artifacts_location):
     """Registers an application in another application that provides some special functionality.
     E.g. there's the application-broker app that registers another application as a broker.
@@ -143,13 +171,12 @@ def setup_broker(broker):
     """
     _log.info('Setting up broker %s...', broker.name)
     broker_args = [broker.name, broker.auth_username, broker.auth_password, broker.url]
-    try:
-        cf_cli.update_service_broker(*broker_args)
-    except CommandFailedError as ex:
-        _log.debug(str(ex))
-        _log.info("Updating a broker (%s) failed, assuming it doesn't exist yet. "
-                  "Gonna create it now...", broker.name)
+    if broker.name not in cf_cli.service_brokers():
+        _log.info("Broker %s doesn't exist. Gonna create it now...", broker.name)
         cf_cli.create_service_broker(*broker_args)
+    else:
+        _log.info("Broker %s exists. Will update it...", broker.name)
+        cf_cli.update_service_broker(*broker_args)
 
     _enable_broker_access(broker)
 
