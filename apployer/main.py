@@ -217,8 +217,8 @@ def _seconds_to_time(seconds):
 
 
 # TODO primary
-# --dry-run (deployer functions should be in a class, some methods need to be overwritten,
-#   need to check for existance first before trying to update/create services)
+# --dry-run (setup_broker needs to first check for existance, registern_in_application_broker also
+#   needs to be dried)
 # make installable and testable for py26 (no networkx)
 # Brokers serving instances that hold no data (like all WSSB brokers) can be marked as "recreatable"
 #   or something. Then, they could be recreated and rebound to apps when WSSB configuration changes.

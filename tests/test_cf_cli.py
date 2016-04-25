@@ -17,7 +17,7 @@
 from mock import call
 import pytest
 
-from .fake_cli_outputs import GET_ENV_SUCCESS, GET_SERVICE_INFO_SUCCESS
+from .fake_cf_outputs import GET_ENV_SUCCESS, GET_SERVICE_INFO_SUCCESS
 from apployer import cf_cli
 from apployer.cf_cli import CommandFailedError, CfInfo
 
@@ -233,10 +233,12 @@ bearer abcdf.1233456789.fdcba
     assert cf_cli.oauth_token() == 'bearer abcdf.1233456789.fdcba'
 
 
-def test_get_service_guid(mock_popen):
-    service_guid = '8b89a54b-b292-49eb-a8c4-2396ec038120'
-    cmd_output = service_guid + '\n'
-    service_name = 'some-service'
-    mock_popen.set_command('cf service --guid {}'.format(service_name), stdout=cmd_output)
+def test_get_app_and_service_guid(mock_popen):
+    guid = '8b89a54b-b292-49eb-a8c4-2396ec038120'
+    cmd_output = guid + '\n'
+    name = 'something'
+    mock_popen.set_command('cf service --guid {}'.format(name), stdout=cmd_output)
+    mock_popen.set_command('cf app --guid {}'.format(name), stdout=cmd_output)
 
-    assert cf_cli.get_service_guid(service_name) == service_guid
+    assert cf_cli.get_app_guid(name) == guid
+    assert cf_cli.get_service_guid(name) == guid

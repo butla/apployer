@@ -216,6 +216,18 @@ def env(app_name):
     return get_command_output([CF, 'env', app_name])
 
 
+def get_app_guid(app_name):
+    """
+    Args:
+        app_name (str): Name of a service instace (can be a user-provided one).
+
+    Returns:
+        str: GUID of the application that can be used in API calls.
+    """
+    cmd_output = get_command_output([CF, 'app', '--guid', app_name])
+    return cmd_output.split()[0]
+
+
 def get_service_guid(service_name):
     """
     Args:

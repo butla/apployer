@@ -66,6 +66,7 @@ def delete_service_binding(binding):
         raise cf_cli.CommandFailedError('Failed to delete a service binding. CF response: {}'
                                         .format(cmd_output))
 
+
 def get_app_name(app_guid):
     """
     Args:
@@ -76,6 +77,18 @@ def get_app_name(app_guid):
     """
     app_desctiption = _cf_curl_get('/v2/apps/{}'.format(app_guid))
     return app_desctiption['entity']['name']
+
+
+def get_app_summary(app_guid):
+    """Gets a summary of the application's state. This includes its full configuration.
+
+    Args:
+        app_guid (str): Application's GUID.
+
+    Returns:
+        dict: Application's summary. Contains fields like "services", "memory", "buildpack", etc.
+    """
+    return _cf_curl_get('/v2/apps/{}/summary'.format(app_guid))
 
 
 def get_upsi_credentials(service_guid):

@@ -27,11 +27,9 @@ import subprocess
 from zipfile import ZipFile
 
 import datadiff
-from pkg_resources import parse_version
 import yaml
 
-import apployer.app_file as app_file
-from apployer import cf_cli, cf_api
+from apployer import cf_cli, cf_api, app_file, app_compare
 from .cf_cli import CommandFailedError
 
 _log = logging.getLogger(__name__) #pylint: disable=invalid-name
@@ -45,7 +43,6 @@ FINAL_MANIFESTS_FOLDER = 'manifests'
 DEPLOYER_OUTPUT = 'apployer_out'
 
 
-# TODO add option of dry run that switches all cf_cli commands to stubs
 def deploy_appstack(cf_login_data, filled_appstack, artifacts_path, push_strategy):
     """Deploys the appstack to Cloud Foundry.
 
@@ -288,6 +285,7 @@ class UpsiDeployer(object):
         try:
             service_guid = cf_cli.get_service_guid(service_name)
             _log.info('User provided service %s has GUID %s.', service_name, service_guid)
+            return self._update(service_guid)
         except CommandFailedError as ex:
             _log.debug(str(ex))
             _log.info("Failed to get GUID of user provided service %s, assuming it doesn't exist "
@@ -296,8 +294,6 @@ class UpsiDeployer(object):
                                                 json.dumps(self. service.credentials))
             _log.debug('Created user provided service %s.', service_name)
             return []
-
-        return self._update(service_guid)
 
     def _update(self, service_guid):
         """Updates the service if it's different in the appstack and in the live environment.
@@ -348,7 +344,6 @@ class AppDeployer(object):
 
     FILLED_MANIFEST = 'filled_manifest.yml'
 
-    # TODO it should throw some error on push that can be handled by the overall procedure.
     def __init__(self, app, output_path):
         self.app = app
         self.output_path = output_path
@@ -428,45 +423,26 @@ class AppDeployer(object):
             _log.info("No need to push app %s, it's already up-to-date...", self.app.name)
 
     def _check_push_needed(self, push_strategy):
-        _log.debug('Checking whether to push app %s...', self.app.name)
-        try:
-            if push_strategy == PUSH_ALL_STRATEGY:
-                _log.debug('Will push app %s because strategy is PUSH_ALL.', self.app.name)
-            else:
-                live_app_version = self._get_app_version()
-                # empty version string will be parsed to the lowest possible version
-                appstack_app_version = self.app.app_properties.get('env', {}).get('VERSION', '')
-                if parse_version(live_app_version) >= parse_version(appstack_app_version):
-                    _log.debug("App's version (%s) in the live environment isn't lower than the "
-                               "one in filled appstack (%s).\nWon't push app %s",
-                               live_app_version, appstack_app_version, self.app.name)
-                    return False
-                else:
-                    _log.debug("App's version (%s) in the in filled appstack is higher than in "
-                               "live environment (%s).\nWill push app %s",
-                               appstack_app_version, live_app_version, self.app.name)
-        except (CommandFailedError, AppVersionNotFoundError) as ex:
-            _log.debug(str(ex))
-            _log.debug("Getting app (%s) version failed. Will push the app because of that.",
-                       self.app.name)
-        return True
+        """Checks whether an application should be pushed to Cloud Foundry.
+        If strategy is set to "PUSH_ALL" then the app should be pushed.
+        If strategy is set to "UPGRADE" then the application will be pushed when:
 
-    def _get_app_version(self):
-        app_env = cf_cli.env(self.app.name)
-        try:
-            app_version_line = next(line for line in app_env.splitlines()
-                                    if line.startswith('VERSION:'))
-        except StopIteration:
-            raise AppVersionNotFoundError(
-                "Can't determine the version of app {}. VERSION environment variable not found."
-                .format(self.app.name))
-        return app_version_line.split()[1]
+        - app doesn't yet exist in the environment
+        - live environment has older version of the app
+        - live environment has current version of the app, but different values for properties
+        found in the appstack app (additional properties found only in live env don't matter)
 
+        Args:
+            push_strategy (str): Strategy for pushing the application.
 
-class AppVersionNotFoundError(Exception):
-    """
-    'VERSION' environment variable wasn't present for an application.
-    """
+        Returns:
+            bool: True if app should be pushed, False otherwise.
+        """
+        if push_strategy == PUSH_ALL_STRATEGY:
+            _log.info('Will push app %s because strategy is PUSH_ALL.', self.app.name)
+            return True
+        else:
+            return app_compare.should_update(self.app)
 
 
 def _prepare_org_and_space(cf_login_data):

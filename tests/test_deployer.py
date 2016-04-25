@@ -27,7 +27,6 @@ from apployer.appstack import (AppStack, AppConfig, UserProvidedService, BrokerC
                                ServiceInstance)
 from apployer.cf_cli import CommandFailedError, CfInfo, BuildpackDescription
 
-from .fake_cli_outputs import GET_ENV_SUCCESS
 from .utils import get_appstack_resource
 from .test_cf_api import SERVICE_BINDING
 
@@ -96,21 +95,6 @@ def test_app_deploy(app_deployer, mock_upsi_deployer, mock_setup_broker):
     mock_setup_broker.assert_called_with(broker)
 
 
-def test_get_app_version(app_deployer, mock_cf_cli):
-    app_version = '6.6.6'
-    mock_cf_cli.env.return_value = GET_ENV_SUCCESS
-
-    assert app_deployer._get_app_version() == app_version
-    mock_cf_cli.env.assert_called_once_with(app_deployer.app.name)
-
-
-def test_get_app_version_fail(app_deployer, mock_cf_cli):
-    mock_cf_cli.env.return_value = 'some fake output \n without any version'
-
-    with pytest.raises(deployer.AppVersionNotFoundError):
-        app_deployer._get_app_version()
-
-
 def test_prepare_app(artifacts_location, app_deployer):
     prepared_app_path = app_deployer.prepare(artifacts_location)
 
@@ -128,25 +112,22 @@ def test_prepare_app_no_artifact(app_deployer):
         app_deployer.prepare('/some/fake/location')
 
 
-@pytest.mark.parametrize('live_version, appstack_version, strategy, push_needed', [
-    ('0.0.1', '0.0.2', deployer.UPGRADE_STRATEGY, True),
-    ('0.0.3', '0.0.2', deployer.UPGRADE_STRATEGY, False),
-    ('0.0.1', '0.0.2', deployer.PUSH_ALL_STRATEGY, True),
-    ('0.0.3', '0.0.2', deployer.PUSH_ALL_STRATEGY, True),
-])
-def test_check_app_push_needed(live_version, appstack_version, strategy, push_needed):
-    app = AppConfig('bla', app_properties={'env': {'VERSION': appstack_version}})
+def test_check_app_push_needed_push_all():
+    app = AppConfig('bla')
     app_deployer = deployer.AppDeployer(app, 'some-fake-path')
-    app_deployer._get_app_version = lambda: live_version
 
-    assert app_deployer._check_push_needed(strategy) == push_needed
+    assert app_deployer._check_push_needed(deployer.PUSH_ALL_STRATEGY)
 
 
-def test_check_app_push_needed_get_version_fail():
-    app_deployer = deployer.AppDeployer(AppConfig('bla'), 'some-fake-path')
-    app_deployer._get_app_version = MagicMock(side_effect=CommandFailedError)
+def test_check_app_push_needed_upgrade(monkeypatch):
+    mock_should_update = MagicMock(return_value=False)
+    monkeypatch.setattr('apployer.deployer.app_compare.should_update', mock_should_update)
+    app = AppConfig('bla')
+    app_deployer = deployer.AppDeployer(app, 'some-fake-path')
 
-    assert app_deployer._check_push_needed(deployer.UPGRADE_STRATEGY)
+    assert not app_deployer._check_push_needed(deployer.UPGRADE_STRATEGY)
+
+    mock_should_update.assert_called_with(app)
 
 
 @pytest.fixture

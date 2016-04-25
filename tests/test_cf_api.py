@@ -204,3 +204,11 @@ def test_get_app_name(mock_popen):
     mock_popen.set_command("cf curl /v2/apps/{}".format(app_guid), stdout=app_description)
 
     assert cf_api.get_app_name(app_guid) == app_name
+
+
+def test_get_app_summary(mock_popen):
+    app_guid = 'some-fake-guid'
+    fake_app_summary = '{"bla": "something", "ble": true}\n'
+    mock_popen.set_command("cf curl /v2/apps/{}/summary".format(app_guid), stdout=fake_app_summary)
+
+    assert cf_api.get_app_summary(app_guid) == {'bla': 'something', 'ble': True}
